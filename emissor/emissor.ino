@@ -6,105 +6,66 @@
 #define BAUD_RATE 32
 #include "Temporizador.h"
 
-volatile bool clockState = false;
-volatile bool transmitting = false;
-volatile bool ready_to_send = false;
-// volatile byte current_byte = 0;
-// volatile int bit_index = 7;
-
 char buffer[BUFFER_SIZE];
-int buffer_begin = 0;
-int buffer_end = 0;
-char c;
-int n = 7; // n para ajudar na transmissão de bits do char
-int paridade = 0;
-volatile int p = 0;
+volatile int buffer_begin = 0;
+volatile int buffer_end = 0;
 
-enum tx_state{
-  WAIT_SERIAL,
-  RISING_RTS,
-  TRANSMITTING
+// maquina de estados finita
+enum tx_state {
+    WAIT_CTS,
+    DATA_TX
 };
 
-enum tx_state estadoAtual = WAIT_SERIAL;
-
 // Rotina de interrupcao do timer1
-// O que fazer toda vez que 1s passou?
-ISR(TIMER1_COMPA_vect) {
+// O que fazer toda vez que t seg passou?
+ISR(TIMER1_COMPA_vect){
+  static enum tx_state state = WAIT_CTS;
+  static uint8_t bit_pos = 0;
+  static uint8_t current_char = 0;
+  static uint8_t parity = 0;
+  static bool clk_state = HIGH;
 
-  // Verifica se está em wait serial
-  if (estadoAtual == WAIT_SERIAL) {
-    // caso ele saia do TRANSMITTING precisa setar clock HIGH
-    if (clockState != true) {
-      clockState = !clockState;
-      digitalWrite(CLOCK, clockState);
-    }
-    // Verifica se há algo a ser transmitido
-    if (buffer_begin != buffer_end) {
-      estadoAtual = RISING_RTS;
-      return;
-    }
-  }
-
-  switch (estadoAtual) {
-  case WAIT_SERIAL:
-    break;
-  case RISING_RTS: {
-    // Caso ele saia do TRANSMITTING e vai apra RISING_RTS
-    // Precisa setar o clock como HIGH
-    if (clockState != true) {
-      clockState = !clockState;
-      digitalWrite(CLOCK, clockState);
-    }
-    digitalWrite(RTS, HIGH);
-
-    // lopping para esperar o CTS
-    while (digitalRead(CTS) == LOW);
-
-    estadoAtual = TRANSMITTING;
-    break;
-  }
-  case TRANSMITTING: {
-    // Caso n seja 7 precisa ler o novo char a ser enviado
-    if (n == 7) {
-      c = buffer[buffer_begin];
-      buffer_begin = (buffer_begin+1)%BUFFER_SIZE;
-    }
-
-    // caso n<0 transmitimos os 8 bits e falta o de paridade
-    if (n < 0) {
-      if (clockState == true) {
-        digitalWrite(DADOS, paridade % 2);
-        paridade = 0;
-        n = 7;
-        digitalWrite(RTS, LOW);
-
-        if (buffer_begin !=buffer_end) {
-          estadoAtual = RISING_RTS;
-        }
-        else {
-          estadoAtual = WAIT_SERIAL;
+  switch(state){
+    case WAIT_CTS:
+      if(buffer_begin != buffer_end){ // tenho algo para enviar
+        digitalWrite(RTS, HIGH); 
+        if(digitalRead(CTS)){ // ele quer receber?
+          current_char = buffer[buffer_begin % BUFFER_SIZE];
+          parity = 0;
+          bit_pos = 0;
+          state = DATA_TX;
         }
       }
-      clockState = !clockState;
-      digitalWrite(CLOCK, clockState);
+      break;
+    
+    case DATA_TX:
+      clk_state = !clk_state; // alterno meu clock quando estou enviando
+      digitalWrite(CLOCK, clk_state);
 
-      return;
-    }
+      // estou na parte LOW da onda, preparo o dado para enviar
+      if(clk_state == LOW){
+        if(bit_pos < 8){
+          uint8_t bit = (current_char >> (7 - bit_pos)) & 1; 
+          digitalWrite(DADOS, bit);
+          parity ^= bit;
+          bit_pos++;
 
-    // Caso o clockState seja true estamos indo para uma 
-    // borda de descida
-    if (clockState == true) {
-      int dado = bitRead(c, n);
-      n--;
-      paridade += dado;
-      digitalWrite(DADOS, dado);
-    }
-    clockState = !clockState;
-    digitalWrite(CLOCK, clockState);
-    break;
+        }else if(bit_pos == 8){
+          // envia o bit de paridade
+          digitalWrite(DADOS, parity);
+          bit_pos++;
+
+        }else{
+          // finalizo o bit
+          digitalWrite(RTS, LOW);
+          buffer_begin++; // avançando o buffer
+          state = WAIT_CTS;
+          clk_state = HIGH;
+        }
+      }
   }
-  }
+
+>>>>>>> Stashed changes
 }
 
 void reset() {
@@ -126,14 +87,10 @@ void setup() {
   reset();
 }
 
-void loop() {
-
-  // colocar a frase inteira no meu buffer
-  if (Serial.available() > 0) {
-    if (buffer_end < BUFFER_SIZE) {
-      buffer[buffer_end] = Serial.read();
-      Serial.print(buffer[buffer_end]);
-      buffer_end = (buffer_end + 1) % BUFFER_SIZE;
+void loop(void) {
+    if(Serial.available() > 0){
+        buffer[buffer_end % BUFFER_SIZE] = Serial.read();
+        Serial.print(buffer[buffer_end]);
+        buffer_end++;
     }
-  }
 }
