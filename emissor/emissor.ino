@@ -64,8 +64,6 @@ ISR(TIMER1_COMPA_vect){
         }
       }
   }
-
->>>>>>> Stashed changes
 }
 
 void reset() {
