@@ -2,8 +2,8 @@
 #define RTS 7    // Vermelho
 #define CTS 9    // Amarelo
 #define DADOS 12 // Preto
-#define BUFFER_SIZE 64
-#define BAUD_RATE 32
+#define BUFFER_SIZE 128
+#define BAUD_RATE 2048
 #include "Temporizador.h"
 
 char buffer[BUFFER_SIZE];
@@ -41,7 +41,6 @@ ISR(TIMER1_COMPA_vect){
     
     case DATA_TX:
       clk_state = !clk_state; // alterno meu clock quando estou enviando
-      digitalWrite(CLOCK, clk_state);
 
       // estou na parte LOW da onda, preparo o dado para enviar
       if(clk_state == HIGH){
@@ -62,8 +61,12 @@ ISR(TIMER1_COMPA_vect){
           buffer_begin = (buffer_begin + 1)%BUFFER_SIZE; // avançando o buffer
           state = WAIT_CTS;
           clk_state = LOW;
+
+          return;
         }
       }
+
+      digitalWrite(CLOCK, clk_state);
   }
 }
 
@@ -90,6 +93,6 @@ void loop(void) {
     if(Serial.available() > 0){
         buffer[buffer_end % BUFFER_SIZE] = Serial.read();
         Serial.print(buffer[buffer_end]);
-        buffer_end++;
+        buffer_end = (buffer_end + 1) % BUFFER_SIZE;
     }
 }
