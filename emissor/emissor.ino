@@ -1,7 +1,7 @@
 #define CLOCK 10 // Azul
 #define RTS 7    // Vermelho
 #define CTS 9    // Amarelo
-#define DADOS 13 // Preto
+#define DADOS 12 // Preto
 #define BUFFER_SIZE 64
 #define BAUD_RATE 32
 #include "Temporizador.h"
@@ -23,7 +23,7 @@ ISR(TIMER1_COMPA_vect){
   static uint8_t bit_pos = 0;
   static uint8_t current_char = 0;
   static uint8_t parity = 0;
-  static bool clk_state = HIGH;
+  static bool clk_state = LOW;
 
   switch(state){
     case WAIT_CTS:
@@ -34,6 +34,7 @@ ISR(TIMER1_COMPA_vect){
           parity = 0;
           bit_pos = 0;
           state = DATA_TX;
+          digitalWrite(RTS, LOW);
         }
       }
       break;
@@ -43,7 +44,7 @@ ISR(TIMER1_COMPA_vect){
       digitalWrite(CLOCK, clk_state);
 
       // estou na parte LOW da onda, preparo o dado para enviar
-      if(clk_state == LOW){
+      if(clk_state == HIGH){
         if(bit_pos < 8){
           uint8_t bit = (current_char >> (7 - bit_pos)) & 1; 
           digitalWrite(DADOS, bit);
@@ -57,10 +58,10 @@ ISR(TIMER1_COMPA_vect){
 
         }else{
           // finalizo o bit
-          digitalWrite(RTS, LOW);
-          buffer_begin++; // avançando o buffer
+          digitalWrite(CLOCK, LOW);
+          buffer_begin = (buffer_begin + 1)%BUFFER_SIZE; // avançando o buffer
           state = WAIT_CTS;
-          clk_state = HIGH;
+          clk_state = LOW;
         }
       }
   }
@@ -70,7 +71,7 @@ void reset() {
   noInterrupts();
   digitalWrite(DADOS, LOW);
   digitalWrite(RTS, LOW);
-  digitalWrite(CLOCK, HIGH);
+  digitalWrite(CLOCK, LOW);
   interrupts();
 }
 
